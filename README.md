@@ -43,8 +43,8 @@ If microphone access is denied, the game shows an alert asking you to enable it.
 
 ## Files
 
-- `index.html` – Main page markup. [html file](https://github.com/JDpiggy/quickdraw/index.html)
-- `style.css` – Styling for screen colors, dots, timer, and overlays.  [css file](https://github.com/JDpiggy/quickdraw/style.css)
+- `index.html` – Main page markup. [html file](https://github.com/JDpiggy/quickdraw/blob/main/index.html)
+- `style.css` – Styling for screen colors, dots, timer, and overlays.  [css file](https://github.com/JDpiggy/quickdraw/blob/main/style.css)
 - `script.js` – Game logic, audio setup, sound detection, high score handling.  [javascript file](https://github.com/JDpiggy/quickdraw/script.js)
 - `boop.mp3` – Sound played for each green dot. [github](https://github.com/JDpiggy/quickdraw/boop.mp3)
 - `go1.mp3` – Loud “GO” sound when the screen turns green. [github](https://github.com/JDpiggy/quickdraw/go1.mp3)
