@@ -6,6 +6,9 @@ class QuickdrawGame {
         this.result = document.getElementById('result');
         this.highScoreDisplay = document.getElementById('highScore');
         this.soundIndicator = document.getElementById('soundIndicator');
+        this.volumeDisplay = document.getElementById('volumeDisplay');
+        this.micSelect = document.getElementById('micSelect');
+        this.speakerSelect = document.getElementById('speakerSelect');
         this.startTime = null;
         this.timerInterval = null;
         this.gameActive = false;
@@ -17,10 +20,15 @@ class QuickdrawGame {
         this.analyser = null;
         this.soundThreshold = 0.05; // Lowered threshold for sound detection
         this.listeningForSound = false;
+        this.currentMicDeviceId = null;
+        this.currentSpeakerDeviceId = null;
         
         // Sound effects
         this.boopSound = null;
         this.goSound = null;
+        
+        // Volume monitoring
+        this.volumeMonitorInterval = null;
         
         this.init();
     }
@@ -46,6 +54,17 @@ class QuickdrawGame {
             }
         });
         
+        // Add device selection listeners
+        this.micSelect.addEventListener('change', (e) => {
+            this.currentMicDeviceId = e.target.value;
+            this.setupMicrophone();
+        });
+        
+        this.speakerSelect.addEventListener('change', (e) => {
+            this.currentSpeakerDeviceId = e.target.value;
+            this.setupAudioContext();
+        });
+        
         this.updateHighScoreDisplay();
         this.setupAudio();
     }
@@ -53,43 +72,121 @@ class QuickdrawGame {
     async setupAudio() {
         try {
             console.log('Setting up audio...');
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Load sound effects
+            await this.setupAudioContext();
+            await this.enumerateDevices();
+            await this.setupMicrophone();
             await this.loadSoundEffects();
+            this.startVolumeMonitoring();
+        } catch (error) {
+            console.error('Error setting up audio:', error);
+            alert('Audio setup failed. Please check microphone permissions.');
+        }
+    }
+    
+    async setupAudioContext() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext());
+        }
+        
+        // Set sink ID for speaker selection if supported
+        if (this.currentSpeakerDeviceId && this.audioContext.setSinkId) {
+            try {
+                await this.audioContext.setSinkId(this.currentSpeakerDeviceId);
+                console.log('Speaker set to:', this.currentSpeakerDeviceId);
+            } catch (error) {
+                console.log('Speaker selection not supported or failed:', error);
+            }
+        }
+    }
+    
+    async enumerateDevices() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
             
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
+            // Clear existing options
+            this.micSelect.innerHTML = '<option value="">Default</option>';
+            this.speakerSelect.innerHTML = '<option value="">Default</option>';
+            
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `${device.kind} ${device.deviceId.substr(0, 5)}...`;
+                
+                if (device.kind === 'audioinput') {
+                    this.micSelect.appendChild(option);
+                } else if (device.kind === 'audiooutput') {
+                    this.speakerSelect.appendChild(option);
                 }
             });
             
+            console.log('Devices enumerated');
+        } catch (error) {
+            console.error('Error enumerating devices:', error);
+        }
+    }
+    
+    async setupMicrophone() {
+        try {
+            const constraints = {
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    deviceId: this.currentMicDeviceId ? { exact: this.currentMicDeviceId } : undefined
+                }
+            };
+            
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             console.log('Microphone access granted');
+            
+            // Stop old microphone if exists
+            if (this.microphone) {
+                this.microphone.disconnect();
+            }
+            
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 256;
             this.analyser.smoothingTimeConstant = 0.8;
             
             this.microphone.connect(this.analyser);
-            console.log('Audio setup complete');
-            
-            // Test the analyser with time-domain data
-            const testBuffer = new Uint8Array(this.analyser.frequencyBinCount);
-            this.analyser.getByteTimeDomainData(testBuffer);
-            let sum = 0;
-            for (let i = 0; i < testBuffer.length; i++) {
-                const normalized = (testBuffer[i] - 128) / 128;
-                sum += normalized * normalized;
-            }
-            const rms = Math.sqrt(sum / testBuffer.length);
-            console.log('Test audio level (RMS):', rms);
-            console.log('Audio context state:', this.audioContext.state);
-            
+            console.log('Microphone setup complete');
         } catch (error) {
-            console.error('Error accessing microphone:', error);
-            alert('Microphone access denied. Please allow microphone access to use sound detection.');
+            console.error('Error setting up microphone:', error);
+            throw error;
+        }
+    }
+    
+    startVolumeMonitoring() {
+        if (!this.analyser) return;
+        
+        const bufferLength = this.analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        const updateVolume = () => {
+            if (this.analyser) {
+                this.analyser.getByteTimeDomainData(dataArray);
+                
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const normalized = (dataArray[i] - 128) / 128;
+                    sum += normalized * normalized;
+                }
+                const rms = Math.sqrt(sum / bufferLength);
+                
+                this.volumeDisplay.textContent = `Volume: ${rms.toFixed(3)}`;
+            }
+            
+            this.volumeMonitorInterval = requestAnimationFrame(updateVolume);
+        };
+        
+        updateVolume();
+    }
+    
+    stopVolumeMonitoring() {
+        if (this.volumeMonitorInterval) {
+            cancelAnimationFrame(this.volumeMonitorInterval);
+            this.volumeMonitorInterval = null;
         }
     }
     
@@ -311,6 +408,18 @@ class QuickdrawGame {
         
         // Show high score
         this.updateHighScoreDisplay();
+    }
+    
+    // Cleanup on page unload
+    cleanup() {
+        this.stopVolumeMonitoring();
+        this.stopListeningForSound();
+        if (this.microphone) {
+            this.microphone.disconnect();
+        }
+        if (this.audioContext) {
+            this.audioContext.close();
+        }
     }
     
     updateHighScoreDisplay() {
